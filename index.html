@@ -1,0 +1,1549 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>クリップ置き場 - iPhone用クリップボード保存</title>
+  
+  <!-- PWA & iOS設定 -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="クリップ置き場">
+  <meta name="theme-color" content="#2563EB" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0F172A" media="(prefers-color-scheme: dark)">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <link rel="icon" type="image/png" href="icons/icon-192.png">
+  <link rel="shortcut icon" href="icons/favicon.ico">
+
+  <style>
+    :root {
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --primary-light: #eff6ff;
+      --bg-page: #f8fafc;
+      --bg-card: #ffffff;
+      --bg-card-pinned: #fefce8;
+      --border-card-pinned: #fde047;
+      --text-main: #0f172a;
+      --text-sub: #64748b;
+      --text-muted: #94a3b8;
+      --border: #e2e8f0;
+      --danger: #ef4444;
+      --danger-light: #fef2f2;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --radius-sm: 8px;
+      --radius-md: 14px;
+      --radius-lg: 20px;
+      --shadow-sm: 0 1px 3px rgba(0,0,0,0.05);
+      --shadow-md: 0 4px 12px rgba(0,0,0,0.06);
+      --shadow-lg: 0 10px 25px rgba(0,0,0,0.1);
+      --safe-top: env(safe-area-inset-top, 0px);
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --primary: #3b82f6;
+        --primary-hover: #60a5fa;
+        --primary-light: #1e293b;
+        --bg-page: #090d16;
+        --bg-card: #131b2e;
+        --bg-card-pinned: #1c1f2e;
+        --border-card-pinned: #854d0e;
+        --text-main: #f8fafc;
+        --text-sub: #94a3b8;
+        --text-muted: #64748b;
+        --border: #1e293b;
+        --danger: #f87171;
+        --danger-light: #2c1517;
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Hiragino Kaku Gothic ProN", Meiryo, sans-serif;
+      background-color: var(--bg-page);
+      color: var(--text-main);
+      line-height: 1.5;
+      padding-top: calc(var(--safe-top) + 12px);
+      padding-bottom: calc(var(--safe-bottom) + 80px);
+      min-height: 100vh;
+      overflow-x: hidden;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 500px;
+      margin: 0 auto;
+      padding: 0 16px;
+    }
+
+    /* ヘッダー */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+
+    .app-title-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .app-icon-img {
+      width: 38px;
+      height: 38px;
+      border-radius: 10px;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .app-title {
+      font-size: 20px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .count-badge {
+      font-size: 12px;
+      font-weight: 600;
+      background: var(--primary-light);
+      color: var(--primary);
+      padding: 2px 8px;
+      border-radius: 12px;
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .icon-btn {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      color: var(--text-sub);
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      cursor: pointer;
+      box-shadow: var(--shadow-sm);
+      transition: all 0.15s ease;
+    }
+
+    .icon-btn:active {
+      transform: scale(0.92);
+      background: var(--border);
+    }
+
+    /* アクションエリア */
+    .action-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+
+    .btn-paste-huge {
+      background: linear-gradient(135deg, #2563eb, #4f46e5);
+      color: #ffffff;
+      border: none;
+      border-radius: var(--radius-lg);
+      padding: 16px 20px;
+      font-size: 17px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      cursor: pointer;
+      box-shadow: 0 4px 15px rgba(37, 99, 235, 0.35);
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .btn-paste-huge:active {
+      transform: scale(0.97);
+      box-shadow: 0 2px 6px rgba(37, 99, 235, 0.2);
+    }
+
+    .btn-paste-huge svg {
+      width: 22px;
+      height: 22px;
+      fill: currentColor;
+    }
+
+    /* 手入力トグル＆フォーム */
+    .manual-toggle-btn {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      color: var(--text-sub);
+      border-radius: var(--radius-md);
+      padding: 10px 14px;
+      font-size: 14px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .manual-toggle-btn:active {
+      background: var(--border);
+    }
+
+    .manual-input-box {
+      display: none;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 12px;
+      margin-top: -2px;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .manual-input-box.open {
+      display: block;
+      animation: slideDown 0.2s ease-out;
+    }
+
+    @keyframes slideDown {
+      from { opacity: 0; transform: translateY(-8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .manual-textarea {
+      width: 100%;
+      height: 90px;
+      border: 1px solid var(--border);
+      background: var(--bg-page);
+      color: var(--text-main);
+      border-radius: var(--radius-sm);
+      padding: 10px;
+      font-size: 16px; /* 勝手ズーム防止 */
+      font-family: inherit;
+      resize: vertical;
+      outline: none;
+    }
+
+    .manual-textarea:focus {
+      border-color: var(--primary);
+    }
+
+    .manual-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .btn-sm {
+      padding: 7px 14px;
+      font-size: 13px;
+      font-weight: 600;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      border: none;
+    }
+
+    .btn-primary-sm {
+      background: var(--primary);
+      color: #fff;
+    }
+
+    .btn-secondary-sm {
+      background: var(--border);
+      color: var(--text-sub);
+    }
+
+    /* 検索バー */
+    .search-bar-wrap {
+      position: relative;
+      margin-bottom: 16px;
+    }
+
+    .search-input {
+      width: 100%;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      color: var(--text-main);
+      border-radius: var(--radius-md);
+      padding: 11px 40px 11px 38px;
+      font-size: 16px; /* 勝手ズーム防止 */
+      outline: none;
+      box-shadow: var(--shadow-sm);
+      transition: border-color 0.2s ease;
+    }
+
+    .search-input:focus {
+      border-color: var(--primary);
+    }
+
+    .search-icon-left {
+      position: absolute;
+      left: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-muted);
+      pointer-events: none;
+    }
+
+    .search-clear-btn {
+      position: absolute;
+      right: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: var(--text-muted);
+      color: var(--bg-card);
+      border: none;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    .search-clear-btn.visible {
+      display: flex;
+    }
+
+    .search-result-info {
+      font-size: 12px;
+      color: var(--text-sub);
+      margin: -8px 0 12px 4px;
+      display: none;
+    }
+
+    .search-result-info.visible {
+      display: block;
+    }
+
+    /* セクション見出し */
+    .section-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text-sub);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin: 16px 0 8px 4px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* クリップカードリスト */
+    .clip-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .clip-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 14px;
+      box-shadow: var(--shadow-sm);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      position: relative;
+      transition: all 0.2s ease;
+      user-select: text;
+      -webkit-user-select: text;
+    }
+
+    .clip-card.pinned {
+      background: var(--bg-card-pinned);
+      border-color: var(--border-card-pinned);
+      box-shadow: 0 2px 8px rgba(245, 158, 11, 0.12);
+    }
+
+    .clip-card:active {
+      transform: scale(0.99);
+    }
+
+    .card-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12px;
+      color: var(--text-sub);
+    }
+
+    .card-meta-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .card-time {
+      font-weight: 500;
+    }
+
+    .char-count {
+      background: var(--border);
+      padding: 1px 6px;
+      border-radius: 6px;
+      font-size: 11px;
+    }
+
+    .card-pin-btn {
+      background: transparent;
+      border: none;
+      font-size: 16px;
+      cursor: pointer;
+      color: var(--text-muted);
+      padding: 4px;
+      border-radius: 6px;
+      line-height: 1;
+    }
+
+    .clip-card.pinned .card-pin-btn {
+      color: var(--warning);
+    }
+
+    .card-body {
+      font-size: 15px;
+      line-height: 1.55;
+      color: var(--text-main);
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 240px;
+      overflow-y: auto;
+      user-select: text;
+      -webkit-user-select: text;
+    }
+
+    .card-body mark {
+      background: #fde047;
+      color: #000;
+      padding: 0 2px;
+      border-radius: 2px;
+    }
+
+    /* リンク自動検出ボタン */
+    .link-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: var(--primary-light);
+      color: var(--primary);
+      text-decoration: none;
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      margin-top: 4px;
+      word-break: break-all;
+    }
+
+    .card-bottom-actions {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-top: 8px;
+      border-top: 1px solid var(--border);
+    }
+
+    .copy-btn {
+      background: var(--primary-light);
+      color: var(--primary);
+      border: none;
+      border-radius: var(--radius-sm);
+      padding: 7px 14px;
+      font-size: 13px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .copy-btn:active {
+      transform: scale(0.94);
+      background: var(--primary);
+      color: #fff;
+    }
+
+    .sub-actions {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .action-icon-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-sub);
+      width: 32px;
+      height: 32px;
+      border-radius: var(--radius-sm);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 15px;
+      cursor: pointer;
+    }
+
+    .action-icon-btn:active {
+      background: var(--border);
+    }
+
+    .action-icon-btn.delete-btn:active {
+      background: var(--danger-light);
+      color: var(--danger);
+    }
+
+    /* 空っぽ表示 */
+    .empty-state {
+      text-align: center;
+      padding: 40px 20px;
+      color: var(--text-sub);
+    }
+
+    .empty-icon {
+      font-size: 48px;
+      margin-bottom: 12px;
+      opacity: 0.8;
+    }
+
+    .empty-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text-main);
+      margin-bottom: 6px;
+    }
+
+    .empty-desc {
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    /* トースト通知 */
+    .toast-container {
+      position: fixed;
+      bottom: calc(var(--safe-bottom) + 20px);
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 1000;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      pointer-events: none;
+    }
+
+    .toast {
+      background: rgba(15, 23, 42, 0.92);
+      backdrop-filter: blur(8px);
+      color: #ffffff;
+      padding: 10px 18px;
+      border-radius: 30px;
+      font-size: 14px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      box-shadow: var(--shadow-lg);
+      pointer-events: auto;
+      animation: popIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .toast.toast-undo {
+      border-radius: var(--radius-md);
+      padding: 12px 18px;
+      justify-content: space-between;
+      gap: 16px;
+      width: 90vw;
+      max-width: 360px;
+    }
+
+    .toast-undo-btn {
+      background: #f59e0b;
+      color: #000;
+      border: none;
+      padding: 5px 12px;
+      border-radius: 6px;
+      font-weight: 700;
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    @keyframes popIn {
+      from { opacity: 0; transform: translateY(12px) scale(0.92); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    /* モーダル */
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.5);
+      backdrop-filter: blur(4px);
+      z-index: 900;
+      display: none;
+      align-items: flex-end;
+      justify-content: center;
+    }
+
+    .modal-overlay.open {
+      display: flex;
+    }
+
+    .modal-sheet {
+      background: var(--bg-card);
+      width: 100%;
+      max-width: 500px;
+      border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+      padding: 20px 18px calc(var(--safe-bottom) + 24px);
+      max-height: 85vh;
+      overflow-y: auto;
+      box-shadow: var(--shadow-lg);
+      animation: sheetUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    @keyframes sheetUp {
+      from { transform: translateY(100%); }
+      to { transform: translateY(0); }
+    }
+
+    .modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .modal-title {
+      font-size: 17px;
+      font-weight: 800;
+    }
+
+    .modal-close-btn {
+      background: var(--border);
+      border: none;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      color: var(--text-sub);
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+
+    .modal-section {
+      margin-bottom: 20px;
+    }
+
+    .modal-section-title {
+      font-size: 14px;
+      font-weight: 700;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .modal-btn-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 8px;
+    }
+
+    .btn-block {
+      width: 100%;
+      padding: 12px;
+      border-radius: var(--radius-md);
+      font-size: 14px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      cursor: pointer;
+      border: 1px solid var(--border);
+      background: var(--bg-page);
+      color: var(--text-main);
+    }
+
+    .btn-block:active {
+      background: var(--border);
+    }
+
+    /* 編集モーダル用テキストエリア */
+    .edit-textarea {
+      width: 100%;
+      height: 160px;
+      border: 1px solid var(--border);
+      background: var(--bg-page);
+      color: var(--text-main);
+      border-radius: var(--radius-md);
+      padding: 12px;
+      font-size: 16px;
+      font-family: inherit;
+      resize: vertical;
+      outline: none;
+      margin-bottom: 12px;
+    }
+
+    /* 自己診断パネル */
+    .diag-panel {
+      background: var(--bg-page);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 12px;
+      font-size: 12px;
+      font-family: monospace;
+      color: var(--text-sub);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .diag-row {
+      display: flex;
+      justify-content: space-between;
+      border-bottom: 1px dashed var(--border);
+      padding-bottom: 4px;
+    }
+
+    .diag-val.ok {
+      color: var(--success);
+      font-weight: 700;
+    }
+
+    .diag-val.warn {
+      color: var(--warning);
+      font-weight: 700;
+    }
+
+    /* iOSショートカット手順書 */
+    .shortcut-step {
+      background: var(--bg-page);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 10px;
+      font-size: 13px;
+      margin-bottom: 8px;
+      line-height: 1.5;
+    }
+
+    .shortcut-step ol {
+      padding-left: 20px;
+      margin-top: 4px;
+    }
+
+    .shortcut-step li {
+      margin-bottom: 4px;
+    }
+
+    .code-snippet {
+      background: var(--border);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 12px;
+      word-break: break-all;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <!-- ヘッダー -->
+    <header>
+      <div class="app-title-group">
+        <img src="icons/icon-180.png" alt="Icon" class="app-icon-img">
+        <div>
+          <div class="app-title">
+            クリップ置き場
+            <span class="count-badge" id="countBadge">0件</span>
+          </div>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button class="icon-btn" id="openSettingsBtn" title="設定・連携" aria-label="設定">⚙️</button>
+      </div>
+    </header>
+
+    <!-- アクションパネル -->
+    <div class="action-panel">
+      <!-- 巨大な貼り付けて保存ボタン -->
+      <button class="btn-paste-huge" id="btnPasteHuge" aria-label="貼り付けて保存">
+        <svg viewBox="0 0 24 24">
+          <path d="M19 3h-4.18C14.4 1.84 13.3 1 12 1c-1.3 0-2.4.84-2.82 2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 0c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm7 16H5V5h2v2h10V5h2v14z"/>
+        </svg>
+        <span>📋 貼り付けて保存</span>
+      </button>
+
+      <!-- 手入力トグル -->
+      <button class="manual-toggle-btn" id="btnToggleManual">
+        <span id="manualToggleIcon">＋</span> 手入力で新しいメモを書く
+      </button>
+
+      <!-- 手入力ボックス -->
+      <div class="manual-input-box" id="manualInputBox">
+        <textarea class="manual-textarea" id="manualTextarea" placeholder="ここにテキストを入力..."></textarea>
+        <div class="manual-actions">
+          <button class="btn-sm btn-secondary-sm" id="btnCancelManual">キャンセル</button>
+          <button class="btn-sm btn-primary-sm" id="btnSaveManual">追加する</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 検索バー -->
+    <div class="search-bar-wrap">
+      <span class="search-icon-left">🔍</span>
+      <input type="text" class="search-input" id="searchInput" placeholder="保存したテキストを検索..." autocomplete="off">
+      <button class="search-clear-btn" id="searchClearBtn" aria-label="検索クリア">✕</button>
+    </div>
+    <div class="search-result-info" id="searchResultInfo"></div>
+
+    <!-- ピン留めリスト -->
+    <div id="pinnedSection" style="display: none;">
+      <div class="section-title">📌 ピン留め</div>
+      <div class="clip-list" id="pinnedClipList"></div>
+    </div>
+
+    <!-- 通常クリップリスト -->
+    <div id="normalSection">
+      <div class="section-title" id="normalSectionTitle" style="display: none;">📑 クリップ一覧</div>
+      <div class="clip-list" id="normalClipList"></div>
+    </div>
+
+    <!-- 空っぽ表示 -->
+    <div class="empty-state" id="emptyState" style="display: none;">
+      <div class="empty-icon">📭</div>
+      <div class="empty-title">クリップはまだありません</div>
+      <div class="empty-desc">
+        上の「📋 貼り付けて保存」ボタンを押すか、<br>
+        手入力でテキストを保存してください。
+      </div>
+    </div>
+  </div>
+
+  <!-- トースト通知 -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <!-- 編集モーダル -->
+  <div class="modal-overlay" id="editModalOverlay">
+    <div class="modal-sheet">
+      <div class="modal-header">
+        <div class="modal-title">✏️ クリップを編集</div>
+        <button class="modal-close-btn" id="closeEditModalBtn">✕</button>
+      </div>
+      <textarea class="edit-textarea" id="editTextarea"></textarea>
+      <div class="modal-btn-row">
+        <button class="btn-block" id="cancelEditBtn">キャンセル</button>
+        <button class="btn-block" id="saveEditBtn" style="background: var(--primary); color: #fff; border: none;">変更を保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 設定・バックアップ・連携モーダル -->
+  <div class="modal-overlay" id="settingsModalOverlay">
+    <div class="modal-sheet">
+      <div class="modal-header">
+        <div class="modal-title">⚙️ 設定・バックアップ・連携</div>
+        <button class="modal-close-btn" id="closeSettingsModalBtn">✕</button>
+      </div>
+
+      <!-- バックアップ & 移行 -->
+      <div class="modal-section">
+        <div class="modal-section-title">📦 データのバックアップと復元</div>
+        <div class="modal-btn-row">
+          <button class="btn-block" id="btnExportJson">📥 JSON保存</button>
+          <button class="btn-block" id="btnExportClipboard">📋 全件コピー</button>
+        </div>
+        <div class="modal-btn-row">
+          <button class="btn-block" id="btnImportJson">📤 JSON復元</button>
+          <button class="btn-block" id="btnClearAll" style="color: var(--danger);">🗑️ 全件削除</button>
+        </div>
+        <input type="file" id="importFileInput" accept=".json" style="display: none;">
+      </div>
+
+      <!-- iOSショートカット連携レシピ -->
+      <div class="modal-section">
+        <div class="modal-section-title">📲 iPhone ショートカット連携</div>
+        <div class="shortcut-step">
+          <strong>共有シートから1タップで保存する方法：</strong>
+          <ol>
+            <li>iPhone の「ショートカット」アプリを開く</li>
+            <li>「＋」で新規ショートカットを作成し、右上の詳細「共有シートに表示」をONにする</li>
+            <li>アクション「URLを開く」を追加し、以下を指定する：<br>
+              <span class="code-snippet" id="shortcutUrlDisplay">https://realjam511.github.io/clip-box/?text=ショートカットの入力</span>
+            </li>
+            <li>「完了」を押すと、Safari等の共有シートからテキストを即座にこの置き場へ送信できます！</li>
+          </ol>
+        </div>
+      </div>
+
+      <!-- 自己診断パネル (規約5) -->
+      <div class="modal-section">
+        <div class="modal-section-title">🛠️ システム自己診断パネル</div>
+        <div class="diag-panel" id="diagPanel">
+          <div class="diag-row">
+            <span>Clipboard API</span>
+            <span class="diag-val" id="diagClipboard">判定中...</span>
+          </div>
+          <div class="diag-row">
+            <span>localStorage 使用量</span>
+            <span class="diag-val" id="diagStorage">計算中...</span>
+          </div>
+          <div class="diag-row">
+            <span>Service Worker</span>
+            <span class="diag-val" id="diagSw">確認中...</span>
+          </div>
+          <div class="diag-row">
+            <span>起動モード</span>
+            <span class="diag-val" id="diagDisplayMode">確認中...</span>
+          </div>
+          <div class="diag-row">
+            <span>総保存クリップ数</span>
+            <span class="diag-val" id="diagTotalItems">0件</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // -------------------------------------------------------------
+    // クリップ置き場 アプリケーションコア
+    // -------------------------------------------------------------
+    const STORAGE_KEY = 'clip_box_items_v1';
+    let clips = [];
+    let editingClipId = null;
+    let lastDeletedClip = null;
+    let undoTimeout = null;
+
+    // Service Worker 登録
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js').then((reg) => {
+          console.log('[PWA] Service Worker Registered:', reg.scope);
+        }).catch((err) => {
+          console.warn('[PWA] Service Worker Registration failed:', err);
+        });
+      });
+    }
+
+    // データ読み込み
+    function loadClips() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        clips = raw ? JSON.parse(raw) : [];
+        if (!Array.isArray(clips)) clips = [];
+      } catch (e) {
+        console.error('Failed to load clips from localStorage:', e);
+        clips = [];
+      }
+    }
+
+    // データ保存
+    function saveClips() {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(clips));
+        updateCountBadge();
+        updateDiagInfo();
+      } catch (e) {
+        console.error('Failed to save clips to localStorage:', e);
+        showToast('⚠️ 保存容量が不足している可能性があります');
+      }
+    }
+
+    // 相対日時フォーマット
+    function formatRelativeTime(timestamp) {
+      if (!timestamp) return '';
+      const now = Date.now();
+      const diffSec = Math.floor((now - timestamp) / 1000);
+      if (diffSec < 60) return 'たった今';
+      const diffMin = Math.floor(diffSec / 60);
+      if (diffMin < 60) return `${diffMin}分前`;
+      const diffHour = Math.floor(diffMin / 60);
+      if (diffHour < 24) return `${diffHour}時間前`;
+      const d = new Date(timestamp);
+      const m = d.getMonth() + 1;
+      const day = d.getDate();
+      const h = String(d.getHours()).padStart(2, '0');
+      const min = String(d.getMinutes()).padStart(2, '0');
+      return `${m}/${day} ${h}:${min}`;
+    }
+
+    // URL自動検出
+    function extractFirstUrl(text) {
+      if (!text) return null;
+      const urlRegex = /(https?:\/\/[^\s]+)/g;
+      const matches = text.match(urlRegex);
+      return matches ? matches[0] : null;
+    }
+
+    // クリップ追加
+    function addClip(text, isPinned = false) {
+      const trimmed = text.trim();
+      if (!trimmed) {
+        showToast('テキストが空です');
+        return false;
+      }
+      
+      // 重複チェック（先頭と同じなら更新日時の引き上げのみ行う）
+      const existingIdx = clips.findIndex(c => c.text === trimmed);
+      if (existingIdx !== -1) {
+        const item = clips.splice(existingIdx, 1)[0];
+        item.updatedAt = Date.now();
+        clips.unshift(item);
+        saveClips();
+        renderClips();
+        showToast('既存クリップを最新に更新しました');
+        return true;
+      }
+
+      const newClip = {
+        id: 'clip_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6),
+        text: trimmed,
+        pinned: isPinned,
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+      };
+
+      clips.unshift(newClip);
+      saveClips();
+      renderClips();
+      showToast('📋 保存しました！');
+      return true;
+    }
+
+    // クリップ削除
+    function deleteClip(id) {
+      const idx = clips.findIndex(c => c.id === id);
+      if (idx === -1) return;
+      
+      lastDeletedClip = { item: clips[idx], index: idx };
+      clips.splice(idx, 1);
+      saveClips();
+      renderClips();
+      showUndoToast('1件削除しました');
+    }
+
+    // 削除の取り消し (Undo)
+    function undoDelete() {
+      if (!lastDeletedClip) return;
+      clips.splice(lastDeletedClip.index, 0, lastDeletedClip.item);
+      saveClips();
+      renderClips();
+      lastDeletedClip = null;
+      hideUndoToast();
+      showToast('復元しました');
+    }
+
+    // ピン留めトグル
+    function togglePin(id) {
+      const clip = clips.find(c => c.id === id);
+      if (!clip) return;
+      clip.pinned = !clip.pinned;
+      clip.updatedAt = Date.now();
+      saveClips();
+      renderClips();
+      showToast(clip.pinned ? '📌 ピン留めしました' : 'ピン留めを解除しました');
+    }
+
+    // 再コピー
+    async function copyClipText(text) {
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(text);
+        } else {
+          // フォールバック
+          const ta = document.createElement('textarea');
+          ta.value = text;
+          ta.style.position = 'fixed';
+          ta.style.opacity = '0';
+          document.body.appendChild(ta);
+          ta.focus();
+          ta.select();
+          document.execCommand('copy');
+          document.body.removeChild(ta);
+        }
+        showToast('📄 コピーしました！');
+      } catch (err) {
+        console.error('Copy failed:', err);
+        showToast('⚠️ コピーに失敗しました');
+      }
+    }
+
+    // 編集モーダルを開く
+    function openEditModal(id) {
+      const clip = clips.find(c => c.id === id);
+      if (!clip) return;
+      editingClipId = id;
+      document.getElementById('editTextarea').value = clip.text;
+      document.getElementById('editModalOverlay').classList.add('open');
+      setTimeout(() => document.getElementById('editTextarea').focus(), 150);
+    }
+
+    function closeEditModal() {
+      editingClipId = null;
+      document.getElementById('editModalOverlay').classList.remove('open');
+    }
+
+    function saveEditedClip() {
+      if (!editingClipId) return;
+      const clip = clips.find(c => c.id === editingClipId);
+      if (!clip) return;
+      
+      const newText = document.getElementById('editTextarea').value.trim();
+      if (!newText) {
+        showToast('テキストが空です');
+        return;
+      }
+
+      clip.text = newText;
+      clip.updatedAt = Date.now();
+      saveClips();
+      renderClips();
+      closeEditModal();
+      showToast('変更を保存しました');
+    }
+
+    // トースト通知表示
+    function showToast(message) {
+      const container = document.getElementById('toastContainer');
+      const toast = document.createElement('div');
+      toast.className = 'toast';
+      toast.textContent = message;
+      container.appendChild(toast);
+
+      setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transition = 'opacity 0.3s ease';
+        setTimeout(() => toast.remove(), 300);
+      }, 2200);
+    }
+
+    function showUndoToast(message) {
+      hideUndoToast();
+      const container = document.getElementById('toastContainer');
+      const toast = document.createElement('div');
+      toast.className = 'toast toast-undo';
+      toast.id = 'activeUndoToast';
+      toast.innerHTML = `
+        <span>${message}</span>
+        <button class="toast-undo-btn" onclick="undoDelete()">元に戻す</button>
+      `;
+      container.appendChild(toast);
+
+      undoTimeout = setTimeout(() => {
+        hideUndoToast();
+      }, 5000);
+    }
+
+    function hideUndoToast() {
+      if (undoTimeout) clearTimeout(undoTimeout);
+      const existing = document.getElementById('activeUndoToast');
+      if (existing) existing.remove();
+    }
+
+    // 画面レンダリング
+    function renderClips() {
+      const searchWord = document.getElementById('searchInput').value.trim().toLowerCase();
+      const pinnedListEl = document.getElementById('pinnedClipList');
+      const normalListEl = document.getElementById('normalClipList');
+      const pinnedSecEl = document.getElementById('pinnedSection');
+      const normalTitleEl = document.getElementById('normalSectionTitle');
+      const emptyStateEl = document.getElementById('emptyState');
+      const searchInfoEl = document.getElementById('searchResultInfo');
+
+      pinnedListEl.innerHTML = '';
+      normalListEl.innerHTML = '';
+
+      let filtered = clips;
+      if (searchWord) {
+        filtered = clips.filter(c => c.text.toLowerCase().includes(searchWord));
+        searchInfoEl.textContent = `検索結果: ${filtered.length} 件`;
+        searchInfoEl.classList.add('visible');
+      } else {
+        searchInfoEl.classList.remove('visible');
+      }
+
+      if (filtered.length === 0) {
+        emptyStateEl.style.display = 'block';
+        pinnedSecEl.style.display = 'none';
+        normalTitleEl.style.display = 'none';
+        return;
+      }
+
+      emptyStateEl.style.display = 'none';
+
+      const pinnedClips = filtered.filter(c => c.pinned);
+      const normalClips = filtered.filter(c => !c.pinned);
+
+      // ピン留めセクション
+      if (pinnedClips.length > 0) {
+        pinnedSecEl.style.display = 'block';
+        pinnedClips.forEach(c => pinnedListEl.appendChild(createClipCard(c, searchWord)));
+      } else {
+        pinnedSecEl.style.display = 'none';
+      }
+
+      // 通常クリップセクション
+      if (normalClips.length > 0) {
+        normalTitleEl.style.display = pinnedClips.length > 0 ? 'block' : 'none';
+        normalClips.forEach(c => normalListEl.appendChild(createClipCard(c, searchWord)));
+      } else {
+        normalTitleEl.style.display = 'none';
+      }
+    }
+
+    // クリップカードDOM生成
+    function createClipCard(clip, highlightWord = '') {
+      const card = document.createElement('div');
+      card.className = 'clip-card' + (clip.pinned ? ' pinned' : '');
+      card.id = clip.id;
+
+      // ハイライト処理
+      let displayText = escapeHtml(clip.text);
+      if (highlightWord) {
+        const regex = new RegExp(`(${escapeRegex(highlightWord)})`, 'gi');
+        displayText = displayText.replace(regex, '<mark>$1</mark>');
+      }
+
+      const firstUrl = extractFirstUrl(clip.text);
+      const urlButtonHtml = firstUrl 
+        ? `<a href="${escapeHtml(firstUrl)}" target="_blank" rel="noopener noreferrer" class="link-pill">🔗 リンクを開く</a>`
+        : '';
+
+      card.innerHTML = `
+        <div class="card-top">
+          <div class="card-meta-left">
+            <span class="card-time">${formatRelativeTime(clip.updatedAt || clip.createdAt)}</span>
+            <span class="char-count">${clip.text.length}文字</span>
+          </div>
+          <button class="card-pin-btn" onclick="togglePin('${clip.id}')" title="${clip.pinned ? 'ピン留め解除' : 'ピン留め'}">
+            ${clip.pinned ? '📌' : '📍'}
+          </button>
+        </div>
+        <div class="card-body">${displayText}</div>
+        ${urlButtonHtml}
+        <div class="card-bottom-actions">
+          <button class="copy-btn" onclick="copyClipText(decodeURIComponent('${encodeURIComponent(clip.text)}'))">
+            📄 コピー
+          </button>
+          <div class="sub-actions">
+            <button class="action-icon-btn" onclick="openEditModal('${clip.id}')" title="編集">✏️</button>
+            <button class="action-icon-btn delete-btn" onclick="deleteClip('${clip.id}')" title="削除">🗑️</button>
+          </div>
+        </div>
+      `;
+
+      return card;
+    }
+
+    function escapeHtml(str) {
+      return str.replace(/[&<>'"]/g, 
+        tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag)
+      );
+    }
+
+    function escapeRegex(str) {
+      return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
+    function updateCountBadge() {
+      document.getElementById('countBadge').textContent = `${clips.length}件`;
+    }
+
+    // -------------------------------------------------------------
+    // イベントリスナー設定
+    // -------------------------------------------------------------
+    document.addEventListener('DOMContentLoaded', () => {
+      loadClips();
+
+      // URLパラメータ (?text=...) の受け取りと自動保存
+      const urlParams = new URLSearchParams(window.location.search);
+      const incomingText = urlParams.get('text');
+      if (incomingText) {
+        try {
+          const decoded = decodeURIComponent(incomingText);
+          addClip(decoded);
+          // URLのクリーンアップ (再読み込み時の二重保存防止)
+          const cleanUrl = window.location.origin + window.location.pathname;
+          window.history.replaceState({}, document.title, cleanUrl);
+        } catch (e) {
+          console.error('Failed to parse text param:', e);
+        }
+      }
+
+      renderClips();
+      updateCountBadge();
+      initDiagInfo();
+
+      // 巨大「貼り付けて保存」ボタン
+      document.getElementById('btnPasteHuge').addEventListener('click', async () => {
+        try {
+          if (navigator.clipboard && navigator.clipboard.readText) {
+            const clipText = await navigator.clipboard.readText();
+            if (clipText && clipText.trim()) {
+              addClip(clipText);
+              return;
+            }
+          }
+        } catch (err) {
+          console.warn('Clipboard read failed or permission denied:', err);
+        }
+        // 読み取れなかった・空だった場合は手動入力欄を展開して案内
+        showManualInputBox(true);
+        showToast('クリップボードを直接読み取れませんでした。テキストを入力してください');
+      });
+
+      // 手入力トグル
+      document.getElementById('btnToggleManual').addEventListener('click', () => {
+        const box = document.getElementById('manualInputBox');
+        showManualInputBox(!box.classList.contains('open'));
+      });
+
+      document.getElementById('btnCancelManual').addEventListener('click', () => {
+        showManualInputBox(false);
+      });
+
+      document.getElementById('btnSaveManual').addEventListener('click', () => {
+        const ta = document.getElementById('manualTextarea');
+        if (addClip(ta.value)) {
+          ta.value = '';
+          showManualInputBox(false);
+        }
+      });
+
+      function showManualInputBox(show) {
+        const box = document.getElementById('manualInputBox');
+        const icon = document.getElementById('manualToggleIcon');
+        const ta = document.getElementById('manualTextarea');
+        if (show) {
+          box.classList.add('open');
+          icon.textContent = '▲';
+          setTimeout(() => ta.focus(), 100);
+        } else {
+          box.classList.remove('open');
+          icon.textContent = '＋';
+          ta.value = '';
+        }
+      }
+
+      // 検索バー
+      const searchInput = document.getElementById('searchInput');
+      const searchClearBtn = document.getElementById('searchClearBtn');
+
+      searchInput.addEventListener('input', () => {
+        if (searchInput.value.trim()) {
+          searchClearBtn.classList.add('visible');
+        } else {
+          searchClearBtn.classList.remove('visible');
+        }
+        renderClips();
+      });
+
+      searchClearBtn.addEventListener('click', () => {
+        searchInput.value = '';
+        searchClearBtn.classList.remove('visible');
+        renderClips();
+        searchInput.focus();
+      });
+
+      // 編集モーダル
+      document.getElementById('closeEditModalBtn').addEventListener('click', closeEditModal);
+      document.getElementById('cancelEditBtn').addEventListener('click', closeEditModal);
+      document.getElementById('saveEditBtn').addEventListener('click', saveEditedClip);
+
+      // 設定モーダル
+      const settingsModal = document.getElementById('settingsModalOverlay');
+      document.getElementById('openSettingsBtn').addEventListener('click', () => {
+        updateDiagInfo();
+        updateShortcutUrlDisplay();
+        settingsModal.classList.add('open');
+      });
+      document.getElementById('closeSettingsModalBtn').addEventListener('click', () => {
+        settingsModal.classList.remove('open');
+      });
+
+      // JSON エクスポート
+      document.getElementById('btnExportJson').addEventListener('click', () => {
+        if (clips.length === 0) {
+          showToast('保存されているクリップがありません');
+          return;
+        }
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(clips, null, 2));
+        const dlAnchor = document.createElement('a');
+        const nowStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+        dlAnchor.setAttribute("href", dataStr);
+        dlAnchor.setAttribute("download", `clip_box_backup_${nowStr}.json`);
+        document.body.appendChild(dlAnchor);
+        dlAnchor.click();
+        dlAnchor.remove();
+        showToast('📥 JSONファイルをダウンロードしました');
+      });
+
+      // 全件クリップボードコピー
+      document.getElementById('btnExportClipboard').addEventListener('click', async () => {
+        if (clips.length === 0) {
+          showToast('保存されているクリップがありません');
+          return;
+        }
+        const jsonStr = JSON.stringify(clips, null, 2);
+        await copyClipText(jsonStr);
+        showToast('📋 全件のJSONをコピーしました！');
+      });
+
+      // JSON インポート
+      const fileInput = document.getElementById('importFileInput');
+      document.getElementById('btnImportJson').addEventListener('click', () => {
+        fileInput.click();
+      });
+
+      fileInput.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          try {
+            const imported = JSON.parse(event.target.result);
+            if (!Array.isArray(imported)) throw new Error('Invalid JSON format');
+            
+            // 既存に追加マージ (ID重複は回避)
+            let addedCount = 0;
+            imported.forEach(item => {
+              if (item.text && !clips.some(c => c.text === item.text)) {
+                clips.push({
+                  id: item.id || ('clip_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6)),
+                  text: item.text,
+                  pinned: !!item.pinned,
+                  createdAt: item.createdAt || Date.now(),
+                  updatedAt: item.updatedAt || Date.now()
+                });
+                addedCount++;
+              }
+            });
+
+            // 日時降順でソート
+            clips.sort((a, b) => (b.updatedAt || b.createdAt) - (a.updatedAt || a.createdAt));
+            saveClips();
+            renderClips();
+            showToast(`📤 ${addedCount}件のクリップを復元・マージしました！`);
+            settingsModal.classList.remove('open');
+          } catch (err) {
+            console.error('Import failed:', err);
+            showToast('⚠️ 有効なクリップJSONファイルではありません');
+          }
+          fileInput.value = '';
+        };
+        reader.readAsText(file);
+      });
+
+      // 全件削除
+      document.getElementById('btnClearAll').addEventListener('click', () => {
+        if (clips.length === 0) return;
+        if (confirm('本当にすべてのクリップを削除しますか？\n（この操作は元に戻せません）')) {
+          clips = [];
+          saveClips();
+          renderClips();
+          showToast('🗑️ すべてのクリップを削除しました');
+          settingsModal.classList.remove('open');
+        }
+      });
+    });
+
+    // -------------------------------------------------------------
+    // 自己診断パネル ＆ 連携サポート
+    // -------------------------------------------------------------
+    function initDiagInfo() {
+      // Clipboard判定
+      const diagClip = document.getElementById('diagClipboard');
+      if (navigator.clipboard && navigator.clipboard.readText) {
+        diagClip.textContent = '読み取り/書込み対応 (フル機能)';
+        diagClip.className = 'diag-val ok';
+      } else if (navigator.clipboard) {
+        diagClip.textContent = '書込みのみ対応';
+        diagClip.className = 'diag-val warn';
+      } else {
+        diagClip.textContent = '非対応 (手動入力)';
+        diagClip.className = 'diag-val';
+      }
+
+      // Service Worker判定
+      const diagSw = document.getElementById('diagSw');
+      if ('serviceWorker' in navigator) {
+        diagSw.textContent = '対応済 (キャッシュ稼働中)';
+        diagSw.className = 'diag-val ok';
+      } else {
+        diagSw.textContent = '非対応';
+        diagSw.className = 'diag-val';
+      }
+
+      // 起動モード判定
+      const diagMode = document.getElementById('diagDisplayMode');
+      const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+      if (isStandalone) {
+        diagMode.textContent = 'PWA アプリモード (全画面)';
+        diagMode.className = 'diag-val ok';
+      } else {
+        diagMode.textContent = 'ブラウザ表示中 (ホーム画面追加推奨)';
+        diagMode.className = 'diag-val';
+      }
+    }
+
+    function updateDiagInfo() {
+      // ストレージ使用量
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY) || '';
+        const bytes = new Blob([raw]).size;
+        const kb = (bytes / 1024).toFixed(1);
+        const diagStorage = document.getElementById('diagStorage');
+        diagStorage.textContent = `${kb} KB / 推定5,000 KB`;
+        diagStorage.className = 'diag-val ok';
+      } catch (e) {}
+
+      // アイテム数
+      document.getElementById('diagTotalItems').textContent = `${clips.length} 件`;
+    }
+
+    function updateShortcutUrlDisplay() {
+      const currentUrl = window.location.origin + window.location.pathname;
+      const displayEl = document.getElementById('shortcutUrlDisplay');
+      if (displayEl) {
+        displayEl.textContent = `${currentUrl}?text=ショートカットの入力`;
+      }
+    }
+  </script>
+</body>
+</html>
