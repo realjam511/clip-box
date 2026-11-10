@@ -216,6 +216,59 @@
       color: var(--primary);
     }
 
+    /* フォールバック用ペーストゾーン (要件3) */
+    .fallback-paste-zone {
+      position: relative;
+      background: var(--bg-card);
+      border: 1.5px dashed var(--border);
+      border-radius: var(--radius-md);
+      padding: 11px 14px;
+      margin-top: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      overflow: hidden;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .fallback-paste-zone.highlight {
+      border-color: var(--primary);
+      background: var(--primary-light);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
+    }
+
+    .fallback-paste-inner {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 13px;
+      color: var(--text-sub);
+      pointer-events: none;
+    }
+
+    .fallback-paste-inner .fallback-icon {
+      font-size: 16px;
+    }
+
+    .fallback-paste-inner strong {
+      color: var(--primary);
+    }
+
+    .fallback-paste-input {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      opacity: 0.01;
+      cursor: pointer;
+      font-size: 16px; /* 勝手ズーム防止 */
+      border: none;
+      resize: none;
+    }
+
     /* 手入力トグル＆フォーム */
     .manual-toggle-btn {
       background: var(--bg-card);
@@ -840,6 +893,15 @@
         <span>開いたときに自動で読み取ります。iPhone で確認が出たら<strong>『ペースト』</strong>を押してください。何も起きないときは<strong>画面を1回タップ</strong>してください。</span>
       </div>
 
+      <!-- フォールバック用ペーストゾーン (要件3) -->
+      <div class="fallback-paste-zone" id="fallbackPasteZone" title="長押しでペースト">
+        <div class="fallback-paste-inner">
+          <span class="fallback-icon">📌</span>
+          <span>ここを長押しして<strong>「ペースト」</strong>でも保存できます</span>
+        </div>
+        <textarea id="fallbackPasteInput" class="fallback-paste-input" placeholder="ここを長押ししてペースト" aria-label="ペースト受付エリア"></textarea>
+      </div>
+
       <!-- 手入力トグル -->
       <button class="manual-toggle-btn" id="btnToggleManual">
         <span id="manualToggleIcon">＋</span> 手入力で新しいメモを書く
@@ -1327,21 +1389,21 @@
     }
 
     // -------------------------------------------------------------
-    // クリップボード自動保存 (起動時バックグラウンド ＆ タップ再試行)
+    // クリップボード自動保存 (起動時バックグラウンド ＆ クリック再試行 ＆ フォールバック)
     // -------------------------------------------------------------
     let lastAutoSavedText = null;
     let isAutoSaving = false;
     let autoSaveSuccessInSession = false; // 今回のセッションで自動保存が成功したか
-    let lastAutoSaveLog = { time: null, status: '未試行', detail: '' };
+    let lastAutoSaveLog = { time: null, status: '未試行', trigger: '起動時', detail: '' };
 
-    function updateAutoSaveLog(status, detail = '') {
+    function updateAutoSaveLog(status, trigger = '起動時', detail = '') {
       const now = new Date();
       const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
-      lastAutoSaveLog = { time: timeStr, status, detail };
+      lastAutoSaveLog = { time: timeStr, status, trigger, detail };
       
       const el = document.getElementById('diagAutoSaveResult');
       if (el) {
-        el.textContent = `${status} (${timeStr}${detail ? ' / ' + detail : ''})`;
+        el.textContent = `[${trigger}] ${status} (${timeStr}${detail ? ' / ' + detail : ''})`;
         if (status === '成功') {
           el.className = 'diag-val ok';
         } else if (status === '重複スキップ') {
@@ -1354,18 +1416,19 @@
       }
     }
 
-    async function tryAutoSaveClipboard(isUserGesture = false) {
+    async function tryAutoSaveClipboard(isUserGesture = false, trigger = '起動時') {
       if (isAutoSaving) return false;
       if (!navigator.clipboard || !navigator.clipboard.readText) {
         if (isUserGesture) {
           showToast('⚠️ このブラウザはクリップボード読み取りに未対応です');
+          highlightFallbackZone();
         }
-        updateAutoSaveLog('非対応', 'navigator.clipboard.readText is undefined');
+        updateAutoSaveLog('非対応', trigger, 'navigator.clipboard.readText is undefined');
         return false;
       }
 
       isAutoSaving = true;
-      updateAutoSaveLog('試行中...', isUserGesture ? '画面タップ起点' : '起動時自動');
+      updateAutoSaveLog('試行中...', trigger, isUserGesture ? '応答待機中' : '起動時');
 
       try {
         let raw = '';
@@ -1385,7 +1448,7 @@
           if (isUserGesture) {
             showToast('クリップボードが空です');
           }
-          updateAutoSaveLog('空', 'クリップボードにテキストがありません');
+          updateAutoSaveLog('空', trigger, 'テキストなし');
           return false;
         }
 
@@ -1394,7 +1457,7 @@
           if (isUserGesture) {
             showToast('クリップボードが空白のみです');
           }
-          updateAutoSaveLog('空白', '空白文字のみ');
+          updateAutoSaveLog('空白', trigger, '空白文字のみ');
           return false;
         }
 
@@ -1404,7 +1467,7 @@
           if (isUserGesture) {
             showToast('ℹ️ すでに保存済みの内容です');
           }
-          updateAutoSaveLog('重複スキップ', `直近と一致 (${trimmed.slice(0, 15)}...)`);
+          updateAutoSaveLog('重複スキップ', trigger, `直近と一致 (${trimmed.slice(0, 12)}...)`);
           return false;
         }
 
@@ -1413,7 +1476,7 @@
           if (isUserGesture) {
             showToast('ℹ️ すでに保存済みの内容です');
           }
-          updateAutoSaveLog('重複スキップ', `セッション既保存 (${trimmed.slice(0, 15)}...)`);
+          updateAutoSaveLog('重複スキップ', trigger, `セッション既保存 (${trimmed.slice(0, 12)}...)`);
           return false;
         }
 
@@ -1439,24 +1502,26 @@
 
         saveClips();
         renderClips();
-        // 要件3: 自動保存できたらトースト表示
+        // 成功時のトースト
         showToast('⚡ 自動で保存しました');
-        updateAutoSaveLog('成功', `保存完了 (${trimmed.slice(0, 15)}...)`);
+        updateAutoSaveLog('成功', trigger, `保存完了 (${trimmed.slice(0, 12)}...)`);
+        removeFallbackHighlight();
         return true;
       } catch (err) {
         console.debug('[AutoSave] readText failed:', err);
         const errName = err.name || 'Error';
         if (isUserGesture) {
-          // 要件3: タップ時の失敗フィードバック
+          // 要件3: タップ時・ボタン押下時の失敗フィードバック
           if (errName === 'NotAllowedError') {
-            showToast('ペーストが許可されませんでした。もう一度タップしてください');
+            showToast('ペーストが許可されませんでした。下の長押し枠でも保存できます');
           } else {
-            showToast('読み取れませんでした。もう一度タップしてください');
+            showToast('読み取れませんでした。下の長押し枠でも保存できます');
           }
-          updateAutoSaveLog('失敗', `${errName}: ${err.message || 'unknown'}`);
+          highlightFallbackZone();
+          updateAutoSaveLog('失敗', trigger, `${errName}`);
         } else {
           // 起動時バックグラウンド試行の失敗は静かに記録のみ
-          updateAutoSaveLog('起動時未許可', `${errName}`);
+          updateAutoSaveLog('起動時未許可', trigger, `${errName}`);
         }
         return false;
       } finally {
@@ -1464,14 +1529,24 @@
       }
     }
 
-    // 画面タップによる自動保存（要件1: 一回限りをやめ、成功するまでタップのたびに再試行）
-    function onGlobalPointerDown(e) {
-      // すでにセッション内で自動保存が成功していれば何もしない
+    // フォールバックゾーンのハイライト
+    function highlightFallbackZone() {
+      const zone = document.getElementById('fallbackPasteZone');
+      if (zone) zone.classList.add('highlight');
+    }
+
+    function removeFallbackHighlight() {
+      const zone = document.getElementById('fallbackPasteZone');
+      if (zone) zone.classList.remove('highlight');
+    }
+
+    // 画面タップによる自動保存（追加指定1: pointerdown ではなく click イベント起点）
+    function onGlobalClick(e) {
       if (autoSaveSuccessInSession) return;
       if (isAutoSaving) return;
 
-      // 除外要素（ボタン、モーダル、入力フォームなど）をタップした場合はリスナーを外さず次回に持ち越す
       const target = e.target;
+      // 除外要素：ボタン、モーダル、入力フォーム、カード内アクション、フォールバックゾーン
       if (target && (
         target.closest('#btnPasteHuge') ||
         target.closest('.modal-overlay') ||
@@ -1479,13 +1554,14 @@
         target.closest('.action-icon-btn') ||
         target.closest('.copy-btn') ||
         target.closest('.search-bar-wrap') ||
-        target.closest('#openSettingsBtn')
+        target.closest('#openSettingsBtn') ||
+        target.closest('#fallbackPasteZone')
       )) {
         return;
       }
 
-      // 画面の通常領域（背景・ヘッダー・カード余白など）をタップした！
-      tryAutoSaveClipboard(true);
+      // 画面の通常領域（案内文エリア、背景、ヘッダー、余白など）のクリック完了時！
+      tryAutoSaveClipboard(true, 'タップ');
     }
 
     // -------------------------------------------------------------
@@ -1514,31 +1590,43 @@
       updateCountBadge();
       initDiagInfo();
 
-      // 要件1: 画面タップによる自動保存リスナーを常時登録（成功するまで何度でもタップで再試行）
-      window.addEventListener('pointerdown', onGlobalPointerDown, true);
+      // 追加指定1: 画面タップ（click）による自動保存リスナーを常時登録（成功するまで何度でも再試行）
+      window.addEventListener('click', onGlobalClick, true);
 
       // 起動時のバックグラウンド自動試行（許可済み環境向け）
       setTimeout(() => {
-        tryAutoSaveClipboard(false);
+        tryAutoSaveClipboard(false, '起動時');
       }, 150);
 
-      // 巨大「貼り付けて保存」ボタン
+      // 追加指定2: 巨大「貼り付けて保存」ボタン（タイムアウトなし＋詳細フィードバックに統一）
       document.getElementById('btnPasteHuge').addEventListener('click', async () => {
-        try {
-          if (navigator.clipboard && navigator.clipboard.readText) {
-            const clipText = await navigator.clipboard.readText();
-            if (clipText && clipText.trim()) {
-              addClip(clipText);
-              return;
-            }
-          }
-        } catch (err) {
-          console.warn('Clipboard read failed or permission denied:', err);
-        }
-        // 読み取れなかった・空だった場合は手動入力欄を展開して案内
-        showManualInputBox(true);
-        showToast('クリップボードを直接読み取れませんでした。テキストを入力してください');
+        await tryAutoSaveClipboard(true, 'ボタン');
       });
+
+      // 追加指定3: フォールバック貼り付けゾーン (paste イベント受信)
+      const fallbackInput = document.getElementById('fallbackPasteInput');
+      if (fallbackInput) {
+        fallbackInput.addEventListener('paste', (e) => {
+          e.preventDefault();
+          let pastedText = '';
+          if (e.clipboardData) {
+            pastedText = e.clipboardData.getData('text');
+          } else if (window.clipboardData) {
+            pastedText = window.clipboardData.getData('Text');
+          }
+
+          if (pastedText && pastedText.trim()) {
+            const trimmed = pastedText.trim();
+            addClip(trimmed);
+            updateAutoSaveLog('成功', '貼り付けエリア', `保存完了 (${trimmed.slice(0, 12)}...)`);
+            removeFallbackHighlight();
+            fallbackInput.value = '';
+            fallbackInput.blur();
+          } else {
+            showToast('貼り付けられたテキストが空です');
+          }
+        });
+      }
 
       // 手入力トグル
       document.getElementById('btnToggleManual').addEventListener('click', () => {
@@ -1700,7 +1788,7 @@
       // 別アプリでコピーしてきた新テキストを保存できるようフラグをリセット
       autoSaveSuccessInSession = false;
       setTimeout(() => {
-        tryAutoSaveClipboard(false);
+        tryAutoSaveClipboard(false, '復帰時');
       }, 200);
     }
 
