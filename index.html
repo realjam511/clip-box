@@ -75,7 +75,7 @@
       color: var(--text-main);
       line-height: 1.5;
       padding-top: calc(var(--safe-top) + 12px);
-      padding-bottom: calc(var(--safe-bottom) + 80px);
+      padding-bottom: calc(var(--safe-bottom) + 96px);
       min-height: 100vh;
       overflow-x: hidden;
       user-select: none;
@@ -163,32 +163,45 @@
       margin-bottom: 16px;
     }
 
-    .btn-paste-huge {
+    /* 右下固定フローティング 貼り付けて保存ボタン (v5) */
+    .btn-paste-floating {
+      position: fixed;
+      bottom: calc(var(--safe-bottom) + 20px);
+      right: max(18px, env(safe-area-inset-right));
       background: linear-gradient(135deg, #2563eb, #4f46e5);
       color: #ffffff;
       border: none;
-      border-radius: var(--radius-lg);
-      padding: 16px 20px;
-      font-size: 17px;
+      border-radius: 9999px;
+      padding: 14px 22px;
+      font-size: 15px;
       font-weight: 700;
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 10px;
+      gap: 8px;
       cursor: pointer;
-      box-shadow: 0 4px 15px rgba(37, 99, 235, 0.35);
-      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+      box-shadow: 0 6px 20px rgba(37, 99, 235, 0.42), 0 2px 6px rgba(0, 0, 0, 0.15);
+      z-index: 800;
+      transition: transform 0.15s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.15s ease;
+      -webkit-user-select: none;
+      user-select: none;
     }
 
-    .btn-paste-huge:active {
-      transform: scale(0.97);
-      box-shadow: 0 2px 6px rgba(37, 99, 235, 0.2);
+    .btn-paste-floating:active {
+      transform: scale(0.95);
+      box-shadow: 0 3px 10px rgba(37, 99, 235, 0.3);
     }
 
-    .btn-paste-huge svg {
-      width: 22px;
-      height: 22px;
-      fill: currentColor;
+    .btn-floating-icon {
+      font-size: 18px;
+      line-height: 1;
+      display: inline-block;
+    }
+
+    @media (min-width: 540px) {
+      .btn-paste-floating {
+        right: calc(50% - 250px + 18px);
+      }
     }
 
     /* 起動時自動読み取り案内ヒント */
@@ -879,14 +892,6 @@
 
     <!-- アクションパネル -->
     <div class="action-panel">
-      <!-- 巨大な貼り付けて保存ボタン -->
-      <button class="btn-paste-huge" id="btnPasteHuge" aria-label="貼り付けて保存">
-        <svg viewBox="0 0 24 24">
-          <path d="M19 3h-4.18C14.4 1.84 13.3 1 12 1c-1.3 0-2.4.84-2.82 2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 0c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm7 16H5V5h2v2h10V5h2v14z"/>
-        </svg>
-        <span>📋 貼り付けて保存</span>
-      </button>
-
       <!-- 起動時自動読み取りの案内ヒント (要件2) -->
       <div class="auto-paste-guide" id="autoPasteGuide">
         <span class="guide-icon">💡</span>
@@ -942,11 +947,17 @@
       <div class="empty-icon">📭</div>
       <div class="empty-title">クリップはまだありません</div>
       <div class="empty-desc">
-        上の「📋 貼り付けて保存」ボタンを押すか、<br>
+        右下の「📋 貼り付けて保存」ボタンを押すか、<br>
         手入力でテキストを保存してください。
       </div>
     </div>
   </div>
+
+  <!-- 右下固定フローティング 貼り付けて保存ボタン (v5) -->
+  <button class="btn-paste-floating" id="btnPasteHuge" aria-label="貼り付けて保存">
+    <span class="btn-floating-icon">📋</span>
+    <span>貼り付けて保存</span>
+  </button>
 
   <!-- トースト通知 -->
   <div class="toast-container" id="toastContainer"></div>
