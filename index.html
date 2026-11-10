@@ -194,7 +194,7 @@
     /* 起動時自動読み取り案内ヒント */
     .auto-paste-guide {
       display: flex;
-      align-items: center;
+      align-items: flex-start;
       gap: 8px;
       font-size: 12px;
       line-height: 1.45;
@@ -208,6 +208,7 @@
 
     .auto-paste-guide .guide-icon {
       font-size: 15px;
+      line-height: 1.2;
       flex-shrink: 0;
     }
 
@@ -833,10 +834,10 @@
         <span>📋 貼り付けて保存</span>
       </button>
 
-      <!-- 起動時自動読み取りの案内ヒント (要件5) -->
+      <!-- 起動時自動読み取りの案内ヒント (要件2) -->
       <div class="auto-paste-guide" id="autoPasteGuide">
         <span class="guide-icon">💡</span>
-        <span>開いたときにクリップボードを<strong>自動保存</strong>します。確認画面が出たら「許可」をタップしてください。</span>
+        <span>開いたときに自動で読み取ります。iPhone で確認が出たら<strong>『ペースト』</strong>を押してください。何も起きないときは<strong>画面を1回タップ</strong>してください。</span>
       </div>
 
       <!-- 手入力トグル -->
@@ -1044,10 +1045,6 @@
       const matches = text.match(urlRegex);
       return matches ? matches[0] : null;
     }
-
-    // 自動保存で直近に処理したテキスト（重複抑制用）
-    let lastAutoSavedText = null;
-    let isAutoSaving = false;
 
     // クリップ追加
     function addClip(text, isPinned = false) {
@@ -1326,39 +1323,48 @@
     }
 
     // -------------------------------------------------------------
-    // クリップボード起動時・復帰時自動保存 (要件1〜4)
+    // クリップボード起動時・復帰時自動保存 (要件1〜4 ＆ 初回タップ再試行)
     // -------------------------------------------------------------
-    async function tryAutoSaveClipboard() {
-      if (isAutoSaving) return;
+    let lastAutoSavedText = null;
+    let isAutoSaving = false;
+    let autoSaveCompletedInSession = false;
+
+    async function tryAutoSaveClipboard(isUserGesture = false) {
+      if (isAutoSaving) return false;
       if (!navigator.clipboard || !navigator.clipboard.readText) {
-        return;
+        return false;
       }
 
       isAutoSaving = true;
       try {
         // タイムアウト保護（未許可ダイアログやペンディングによるハング防止）
+        // ユーザーのタップ起点(isUserGesture)の場合はOS確認ダイアログの応答を待てるよう3秒に延長
+        const timeoutMs = isUserGesture ? 3000 : 1500;
         const readPromise = navigator.clipboard.readText();
         const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Clipboard read timeout')), 1500)
+          setTimeout(() => reject(new Error('Clipboard read timeout')), timeoutMs)
         );
         const raw = await Promise.race([readPromise, timeoutPromise]);
-        if (!raw) return;
+        if (!raw) return false;
         const trimmed = raw.trim();
         // 要件2: 空文字・空白のみは保存しない
-        if (!trimmed) return;
+        if (!trimmed) return false;
 
         // セッション内重複自動保存の抑制
         if (lastAutoSavedText === trimmed) {
-          return;
+          autoSaveCompletedInSession = true;
+          return false;
         }
 
         // 要件2: 直近に保存した内容と同一テキストの場合は保存しない
         if (clips.length > 0 && clips[0].text === trimmed) {
           lastAutoSavedText = trimmed;
-          return;
+          autoSaveCompletedInSession = true;
+          return false;
         }
 
         lastAutoSavedText = trimmed;
+        autoSaveCompletedInSession = true;
 
         // 既存クリップにあれば最新へ引き上げ、なければ新規先頭追加
         const existingIdx = clips.findIndex(c => c.text === trimmed);
@@ -1381,12 +1387,47 @@
         renderClips();
         // 要件3: 自動保存できたらトースト表示
         showToast('⚡ 自動で保存しました');
+        return true;
       } catch (err) {
         // 要件4: 読み取り失敗・未許可・フォーカス外は静かに何もしない
         console.debug('[AutoSave] Clipboard read silent failure or rejected:', err);
+        return false;
       } finally {
         isAutoSaving = false;
       }
+    }
+
+    // 初回タップによる自動保存の再試行（要件1: iOS Safari / PWA 対策）
+    let firstTapActive = false;
+    function setupFirstTapAutoSave() {
+      if (firstTapActive || autoSaveCompletedInSession) return;
+      firstTapActive = true;
+
+      const handleFirstTap = async (e) => {
+        if (autoSaveCompletedInSession) {
+          cleanup();
+          return;
+        }
+
+        // 貼り付けボタン、手入力エリア、設定モーダル内、カード操作は各ボタン自身のハンドラに任せる
+        const target = e.target;
+        if (target && (target.closest('#btnPasteHuge') || target.closest('.modal-overlay') || target.closest('#manualInputBox') || target.closest('.action-icon-btn') || target.closest('.copy-btn'))) {
+          cleanup();
+          return;
+        }
+
+        cleanup();
+        // ユーザーのタップ起点でクリップボード自動読み取りを試行
+        await tryAutoSaveClipboard(true);
+      };
+
+      const cleanup = () => {
+        firstTapActive = false;
+        window.removeEventListener('pointerdown', handleFirstTap, true);
+      };
+
+      window.removeEventListener('pointerdown', handleFirstTap, true);
+      window.addEventListener('pointerdown', handleFirstTap, true);
     }
 
     // -------------------------------------------------------------
@@ -1415,8 +1456,13 @@
       updateCountBadge();
       initDiagInfo();
 
-      // 要件1: 起動時に自動保存を試行
-      setTimeout(tryAutoSaveClipboard, 150);
+      // 要件1: 起動時に自動保存を試行（失敗・未許可時は初回タップ待機を設定）
+      setTimeout(async () => {
+        const saved = await tryAutoSaveClipboard(false);
+        if (!saved) {
+          setupFirstTapAutoSave();
+        }
+      }, 150);
 
       // 巨大「貼り付けて保存」ボタン
       document.getElementById('btnPasteHuge').addEventListener('click', async () => {
@@ -1591,19 +1637,31 @@
       });
     });
 
-    // 復帰時（iOS Safari / PWA でバックグラウンドから戻った時）にも自動保存を試行
+    // 復帰時（iOS Safari / PWA でバックグラウンドから戻った時）
     window.addEventListener('pageshow', () => {
-      setTimeout(tryAutoSaveClipboard, 200);
+      autoSaveCompletedInSession = false;
+      setTimeout(async () => {
+        const saved = await tryAutoSaveClipboard(false);
+        if (!saved) setupFirstTapAutoSave();
+      }, 200);
     });
 
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible') {
-        setTimeout(tryAutoSaveClipboard, 200);
+        autoSaveCompletedInSession = false;
+        setTimeout(async () => {
+          const saved = await tryAutoSaveClipboard(false);
+          if (!saved) setupFirstTapAutoSave();
+        }, 200);
       }
     });
 
     window.addEventListener('focus', () => {
-      setTimeout(tryAutoSaveClipboard, 200);
+      autoSaveCompletedInSession = false;
+      setTimeout(async () => {
+        const saved = await tryAutoSaveClipboard(false);
+        if (!saved) setupFirstTapAutoSave();
+      }, 200);
     });
 
     // -------------------------------------------------------------
