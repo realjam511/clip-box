@@ -1051,11 +1051,12 @@
     let lastDeletedClip = null;
     let undoTimeout = null;
 
-    // Service Worker 登録
+    // Service Worker 登録 & 起動時即時更新チェック
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
         navigator.serviceWorker.register('./sw.js').then((reg) => {
           console.log('[PWA] Service Worker Registered:', reg.scope);
+          reg.update(); // 起動時に即座に新バージョンをチェック
         }).catch((err) => {
           console.warn('[PWA] Service Worker Registration failed:', err);
         });
