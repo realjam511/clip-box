@@ -1,5 +1,5 @@
 // クリップ置き場 Service Worker (Cache-First Offline Support)
-const CACHE_NAME = 'clip-box-cache-v1';
+const CACHE_NAME = 'clip-box-cache-v2';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',

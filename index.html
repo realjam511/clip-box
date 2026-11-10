@@ -191,6 +191,30 @@
       fill: currentColor;
     }
 
+    /* 起動時自動読み取り案内ヒント */
+    .auto-paste-guide {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      line-height: 1.45;
+      color: var(--text-sub);
+      background: var(--bg-card);
+      border: 1px dashed var(--border);
+      border-radius: var(--radius-md);
+      padding: 8px 12px;
+      margin-top: 2px;
+    }
+
+    .auto-paste-guide .guide-icon {
+      font-size: 15px;
+      flex-shrink: 0;
+    }
+
+    .auto-paste-guide strong {
+      color: var(--primary);
+    }
+
     /* 手入力トグル＆フォーム */
     .manual-toggle-btn {
       background: var(--bg-card);
@@ -809,6 +833,12 @@
         <span>📋 貼り付けて保存</span>
       </button>
 
+      <!-- 起動時自動読み取りの案内ヒント (要件5) -->
+      <div class="auto-paste-guide" id="autoPasteGuide">
+        <span class="guide-icon">💡</span>
+        <span>開いたときにクリップボードを<strong>自動保存</strong>します。確認画面が出たら「許可」をタップしてください。</span>
+      </div>
+
       <!-- 手入力トグル -->
       <button class="manual-toggle-btn" id="btnToggleManual">
         <span id="manualToggleIcon">＋</span> 手入力で新しいメモを書く
@@ -932,6 +962,10 @@
             <span class="diag-val" id="diagDisplayMode">確認中...</span>
           </div>
           <div class="diag-row">
+            <span>起動時自動保存</span>
+            <span class="diag-val" id="diagAutoSave">確認中...</span>
+          </div>
+          <div class="diag-row">
             <span>総保存クリップ数</span>
             <span class="diag-val" id="diagTotalItems">0件</span>
           </div>
@@ -1011,6 +1045,10 @@
       return matches ? matches[0] : null;
     }
 
+    // 自動保存で直近に処理したテキスト（重複抑制用）
+    let lastAutoSavedText = null;
+    let isAutoSaving = false;
+
     // クリップ追加
     function addClip(text, isPinned = false) {
       const trimmed = text.trim();
@@ -1019,6 +1057,8 @@
         return false;
       }
       
+      lastAutoSavedText = trimmed;
+
       // 重複チェック（先頭と同じなら更新日時の引き上げのみ行う）
       const existingIdx = clips.findIndex(c => c.text === trimmed);
       if (existingIdx !== -1) {
@@ -1286,6 +1326,70 @@
     }
 
     // -------------------------------------------------------------
+    // クリップボード起動時・復帰時自動保存 (要件1〜4)
+    // -------------------------------------------------------------
+    async function tryAutoSaveClipboard() {
+      if (isAutoSaving) return;
+      if (!navigator.clipboard || !navigator.clipboard.readText) {
+        return;
+      }
+
+      isAutoSaving = true;
+      try {
+        // タイムアウト保護（未許可ダイアログやペンディングによるハング防止）
+        const readPromise = navigator.clipboard.readText();
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Clipboard read timeout')), 1500)
+        );
+        const raw = await Promise.race([readPromise, timeoutPromise]);
+        if (!raw) return;
+        const trimmed = raw.trim();
+        // 要件2: 空文字・空白のみは保存しない
+        if (!trimmed) return;
+
+        // セッション内重複自動保存の抑制
+        if (lastAutoSavedText === trimmed) {
+          return;
+        }
+
+        // 要件2: 直近に保存した内容と同一テキストの場合は保存しない
+        if (clips.length > 0 && clips[0].text === trimmed) {
+          lastAutoSavedText = trimmed;
+          return;
+        }
+
+        lastAutoSavedText = trimmed;
+
+        // 既存クリップにあれば最新へ引き上げ、なければ新規先頭追加
+        const existingIdx = clips.findIndex(c => c.text === trimmed);
+        if (existingIdx !== -1) {
+          const item = clips.splice(existingIdx, 1)[0];
+          item.updatedAt = Date.now();
+          clips.unshift(item);
+        } else {
+          const newClip = {
+            id: 'clip_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6),
+            text: trimmed,
+            pinned: false,
+            createdAt: Date.now(),
+            updatedAt: Date.now()
+          };
+          clips.unshift(newClip);
+        }
+
+        saveClips();
+        renderClips();
+        // 要件3: 自動保存できたらトースト表示
+        showToast('⚡ 自動で保存しました');
+      } catch (err) {
+        // 要件4: 読み取り失敗・未許可・フォーカス外は静かに何もしない
+        console.debug('[AutoSave] Clipboard read silent failure or rejected:', err);
+      } finally {
+        isAutoSaving = false;
+      }
+    }
+
+    // -------------------------------------------------------------
     // イベントリスナー設定
     // -------------------------------------------------------------
     document.addEventListener('DOMContentLoaded', () => {
@@ -1298,6 +1402,7 @@
         try {
           const decoded = decodeURIComponent(incomingText);
           addClip(decoded);
+          lastAutoSavedText = decoded.trim();
           // URLのクリーンアップ (再読み込み時の二重保存防止)
           const cleanUrl = window.location.origin + window.location.pathname;
           window.history.replaceState({}, document.title, cleanUrl);
@@ -1309,6 +1414,9 @@
       renderClips();
       updateCountBadge();
       initDiagInfo();
+
+      // 要件1: 起動時に自動保存を試行
+      setTimeout(tryAutoSaveClipboard, 150);
 
       // 巨大「貼り付けて保存」ボタン
       document.getElementById('btnPasteHuge').addEventListener('click', async () => {
@@ -1483,6 +1591,21 @@
       });
     });
 
+    // 復帰時（iOS Safari / PWA でバックグラウンドから戻った時）にも自動保存を試行
+    window.addEventListener('pageshow', () => {
+      setTimeout(tryAutoSaveClipboard, 200);
+    });
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        setTimeout(tryAutoSaveClipboard, 200);
+      }
+    });
+
+    window.addEventListener('focus', () => {
+      setTimeout(tryAutoSaveClipboard, 200);
+    });
+
     // -------------------------------------------------------------
     // 自己診断パネル ＆ 連携サポート
     // -------------------------------------------------------------
@@ -1519,6 +1642,18 @@
       } else {
         diagMode.textContent = 'ブラウザ表示中 (ホーム画面追加推奨)';
         diagMode.className = 'diag-val';
+      }
+
+      // 起動時自動保存判定
+      const diagAuto = document.getElementById('diagAutoSave');
+      if (diagAuto) {
+        if (navigator.clipboard && navigator.clipboard.readText) {
+          diagAuto.textContent = '有効 (起動・復帰時)';
+          diagAuto.className = 'diag-val ok';
+        } else {
+          diagAuto.textContent = '手動のみ (API非対応)';
+          diagAuto.className = 'diag-val';
+        }
       }
     }
 
