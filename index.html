@@ -967,6 +967,10 @@
             <span class="diag-val" id="diagAutoSave">確認中...</span>
           </div>
           <div class="diag-row">
+            <span>直近の自動保存結果</span>
+            <span class="diag-val" id="diagAutoSaveResult">未試行</span>
+          </div>
+          <div class="diag-row">
             <span>総保存クリップ数</span>
             <span class="diag-val" id="diagTotalItems">0件</span>
           </div>
@@ -1323,48 +1327,98 @@
     }
 
     // -------------------------------------------------------------
-    // クリップボード起動時・復帰時自動保存 (要件1〜4 ＆ 初回タップ再試行)
+    // クリップボード自動保存 (起動時バックグラウンド ＆ タップ再試行)
     // -------------------------------------------------------------
     let lastAutoSavedText = null;
     let isAutoSaving = false;
-    let autoSaveCompletedInSession = false;
+    let autoSaveSuccessInSession = false; // 今回のセッションで自動保存が成功したか
+    let lastAutoSaveLog = { time: null, status: '未試行', detail: '' };
+
+    function updateAutoSaveLog(status, detail = '') {
+      const now = new Date();
+      const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+      lastAutoSaveLog = { time: timeStr, status, detail };
+      
+      const el = document.getElementById('diagAutoSaveResult');
+      if (el) {
+        el.textContent = `${status} (${timeStr}${detail ? ' / ' + detail : ''})`;
+        if (status === '成功') {
+          el.className = 'diag-val ok';
+        } else if (status === '重複スキップ') {
+          el.className = 'diag-val';
+        } else if (status.includes('失敗') || status.includes('未許可') || status.includes('非対応')) {
+          el.className = 'diag-val warn';
+        } else {
+          el.className = 'diag-val';
+        }
+      }
+    }
 
     async function tryAutoSaveClipboard(isUserGesture = false) {
       if (isAutoSaving) return false;
       if (!navigator.clipboard || !navigator.clipboard.readText) {
+        if (isUserGesture) {
+          showToast('⚠️ このブラウザはクリップボード読み取りに未対応です');
+        }
+        updateAutoSaveLog('非対応', 'navigator.clipboard.readText is undefined');
         return false;
       }
 
       isAutoSaving = true;
-      try {
-        // タイムアウト保護（未許可ダイアログやペンディングによるハング防止）
-        // ユーザーのタップ起点(isUserGesture)の場合はOS確認ダイアログの応答を待てるよう3秒に延長
-        const timeoutMs = isUserGesture ? 3000 : 1500;
-        const readPromise = navigator.clipboard.readText();
-        const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Clipboard read timeout')), timeoutMs)
-        );
-        const raw = await Promise.race([readPromise, timeoutPromise]);
-        if (!raw) return false;
-        const trimmed = raw.trim();
-        // 要件2: 空文字・空白のみは保存しない
-        if (!trimmed) return false;
+      updateAutoSaveLog('試行中...', isUserGesture ? '画面タップ起点' : '起動時自動');
 
-        // セッション内重複自動保存の抑制
-        if (lastAutoSavedText === trimmed) {
-          autoSaveCompletedInSession = true;
+      try {
+        let raw = '';
+        if (isUserGesture) {
+          // 要件2: ジェスチャ時のタイムアウト撤廃（iOSの「ペースト」確認操作を待つ）
+          raw = await navigator.clipboard.readText();
+        } else {
+          // 起動時自動試行のみタイムアウト保護（1.5秒）
+          const readPromise = navigator.clipboard.readText();
+          const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Timeout')), 1500)
+          );
+          raw = await Promise.race([readPromise, timeoutPromise]);
+        }
+
+        if (!raw) {
+          if (isUserGesture) {
+            showToast('クリップボードが空です');
+          }
+          updateAutoSaveLog('空', 'クリップボードにテキストがありません');
           return false;
         }
 
-        // 要件2: 直近に保存した内容と同一テキストの場合は保存しない
+        const trimmed = raw.trim();
+        if (!trimmed) {
+          if (isUserGesture) {
+            showToast('クリップボードが空白のみです');
+          }
+          updateAutoSaveLog('空白', '空白文字のみ');
+          return false;
+        }
+
+        // 要件2 & 3: 直近保存クリップと同一テキストの場合は保存しない
         if (clips.length > 0 && clips[0].text === trimmed) {
           lastAutoSavedText = trimmed;
-          autoSaveCompletedInSession = true;
+          if (isUserGesture) {
+            showToast('ℹ️ すでに保存済みの内容です');
+          }
+          updateAutoSaveLog('重複スキップ', `直近と一致 (${trimmed.slice(0, 15)}...)`);
+          return false;
+        }
+
+        // セッション内すでに保存済みのテキストと同一の場合
+        if (lastAutoSavedText === trimmed) {
+          if (isUserGesture) {
+            showToast('ℹ️ すでに保存済みの内容です');
+          }
+          updateAutoSaveLog('重複スキップ', `セッション既保存 (${trimmed.slice(0, 15)}...)`);
           return false;
         }
 
         lastAutoSavedText = trimmed;
-        autoSaveCompletedInSession = true;
+        autoSaveSuccessInSession = true;
 
         // 既存クリップにあれば最新へ引き上げ、なければ新規先頭追加
         const existingIdx = clips.findIndex(c => c.text === trimmed);
@@ -1387,47 +1441,51 @@
         renderClips();
         // 要件3: 自動保存できたらトースト表示
         showToast('⚡ 自動で保存しました');
+        updateAutoSaveLog('成功', `保存完了 (${trimmed.slice(0, 15)}...)`);
         return true;
       } catch (err) {
-        // 要件4: 読み取り失敗・未許可・フォーカス外は静かに何もしない
-        console.debug('[AutoSave] Clipboard read silent failure or rejected:', err);
+        console.debug('[AutoSave] readText failed:', err);
+        const errName = err.name || 'Error';
+        if (isUserGesture) {
+          // 要件3: タップ時の失敗フィードバック
+          if (errName === 'NotAllowedError') {
+            showToast('ペーストが許可されませんでした。もう一度タップしてください');
+          } else {
+            showToast('読み取れませんでした。もう一度タップしてください');
+          }
+          updateAutoSaveLog('失敗', `${errName}: ${err.message || 'unknown'}`);
+        } else {
+          // 起動時バックグラウンド試行の失敗は静かに記録のみ
+          updateAutoSaveLog('起動時未許可', `${errName}`);
+        }
         return false;
       } finally {
         isAutoSaving = false;
       }
     }
 
-    // 初回タップによる自動保存の再試行（要件1: iOS Safari / PWA 対策）
-    let firstTapActive = false;
-    function setupFirstTapAutoSave() {
-      if (firstTapActive || autoSaveCompletedInSession) return;
-      firstTapActive = true;
+    // 画面タップによる自動保存（要件1: 一回限りをやめ、成功するまでタップのたびに再試行）
+    function onGlobalPointerDown(e) {
+      // すでにセッション内で自動保存が成功していれば何もしない
+      if (autoSaveSuccessInSession) return;
+      if (isAutoSaving) return;
 
-      const handleFirstTap = async (e) => {
-        if (autoSaveCompletedInSession) {
-          cleanup();
-          return;
-        }
+      // 除外要素（ボタン、モーダル、入力フォームなど）をタップした場合はリスナーを外さず次回に持ち越す
+      const target = e.target;
+      if (target && (
+        target.closest('#btnPasteHuge') ||
+        target.closest('.modal-overlay') ||
+        target.closest('#manualInputBox') ||
+        target.closest('.action-icon-btn') ||
+        target.closest('.copy-btn') ||
+        target.closest('.search-bar-wrap') ||
+        target.closest('#openSettingsBtn')
+      )) {
+        return;
+      }
 
-        // 貼り付けボタン、手入力エリア、設定モーダル内、カード操作は各ボタン自身のハンドラに任せる
-        const target = e.target;
-        if (target && (target.closest('#btnPasteHuge') || target.closest('.modal-overlay') || target.closest('#manualInputBox') || target.closest('.action-icon-btn') || target.closest('.copy-btn'))) {
-          cleanup();
-          return;
-        }
-
-        cleanup();
-        // ユーザーのタップ起点でクリップボード自動読み取りを試行
-        await tryAutoSaveClipboard(true);
-      };
-
-      const cleanup = () => {
-        firstTapActive = false;
-        window.removeEventListener('pointerdown', handleFirstTap, true);
-      };
-
-      window.removeEventListener('pointerdown', handleFirstTap, true);
-      window.addEventListener('pointerdown', handleFirstTap, true);
+      // 画面の通常領域（背景・ヘッダー・カード余白など）をタップした！
+      tryAutoSaveClipboard(true);
     }
 
     // -------------------------------------------------------------
@@ -1456,12 +1514,12 @@
       updateCountBadge();
       initDiagInfo();
 
-      // 要件1: 起動時に自動保存を試行（失敗・未許可時は初回タップ待機を設定）
-      setTimeout(async () => {
-        const saved = await tryAutoSaveClipboard(false);
-        if (!saved) {
-          setupFirstTapAutoSave();
-        }
+      // 要件1: 画面タップによる自動保存リスナーを常時登録（成功するまで何度でもタップで再試行）
+      window.addEventListener('pointerdown', onGlobalPointerDown, true);
+
+      // 起動時のバックグラウンド自動試行（許可済み環境向け）
+      setTimeout(() => {
+        tryAutoSaveClipboard(false);
       }, 150);
 
       // 巨大「貼り付けて保存」ボタン
@@ -1638,31 +1696,19 @@
     });
 
     // 復帰時（iOS Safari / PWA でバックグラウンドから戻った時）
-    window.addEventListener('pageshow', () => {
-      autoSaveCompletedInSession = false;
-      setTimeout(async () => {
-        const saved = await tryAutoSaveClipboard(false);
-        if (!saved) setupFirstTapAutoSave();
+    function handleAppResume() {
+      // 別アプリでコピーしてきた新テキストを保存できるようフラグをリセット
+      autoSaveSuccessInSession = false;
+      setTimeout(() => {
+        tryAutoSaveClipboard(false);
       }, 200);
-    });
+    }
 
+    window.addEventListener('pageshow', handleAppResume);
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible') {
-        autoSaveCompletedInSession = false;
-        setTimeout(async () => {
-          const saved = await tryAutoSaveClipboard(false);
-          if (!saved) setupFirstTapAutoSave();
-        }, 200);
-      }
+      if (document.visibilityState === 'visible') handleAppResume();
     });
-
-    window.addEventListener('focus', () => {
-      autoSaveCompletedInSession = false;
-      setTimeout(async () => {
-        const saved = await tryAutoSaveClipboard(false);
-        if (!saved) setupFirstTapAutoSave();
-      }, 200);
-    });
+    window.addEventListener('focus', handleAppResume);
 
     // -------------------------------------------------------------
     // 自己診断パネル ＆ 連携サポート
@@ -1713,9 +1759,32 @@
           diagAuto.className = 'diag-val';
         }
       }
+
+      // 直近の自動保存結果
+      updateDiagInfo();
     }
 
     function updateDiagInfo() {
+      // 直近の自動保存結果 (要件4)
+      const diagResult = document.getElementById('diagAutoSaveResult');
+      if (diagResult) {
+        if (lastAutoSaveLog.time) {
+          diagResult.textContent = `${lastAutoSaveLog.status} (${lastAutoSaveLog.time}${lastAutoSaveLog.detail ? ' / ' + lastAutoSaveLog.detail : ''})`;
+          if (lastAutoSaveLog.status === '成功') {
+            diagResult.className = 'diag-val ok';
+          } else if (lastAutoSaveLog.status === '重複スキップ') {
+            diagResult.className = 'diag-val';
+          } else if (lastAutoSaveLog.status.includes('失敗') || lastAutoSaveLog.status.includes('未許可') || lastAutoSaveLog.status.includes('非対応')) {
+            diagResult.className = 'diag-val warn';
+          } else {
+            diagResult.className = 'diag-val';
+          }
+        } else {
+          diagResult.textContent = '未試行';
+          diagResult.className = 'diag-val';
+        }
+      }
+
       // ストレージ使用量
       try {
         const raw = localStorage.getItem(STORAGE_KEY) || '';
